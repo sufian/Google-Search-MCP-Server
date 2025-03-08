@@ -1,6 +1,6 @@
 # Google Search MCP Server
 
-##Works amazingly with Cline + VS Code!!
+## Works amazingly with Cline + VS Code!!
 
 An MCP (Model Context Protocol) server that provides Google search capabilities and webpage content analysis tools. This server enables AI models to perform Google searches and analyze webpage content programmatically.
 
