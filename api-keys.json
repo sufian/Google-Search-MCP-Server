@@ -1,4 +1,4 @@
 {
-  "api_key": "google api key here",
-  "search_engine_id": "search engine id here"
+  "api_key": "${GOOGLE_API_KEY}",
+  "search_engine_id": "${GOOGLE_SEARCH_ENGINE_ID}"
 }

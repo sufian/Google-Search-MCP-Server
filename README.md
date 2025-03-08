@@ -1,15 +1,15 @@
 # Google Search MCP Server
 
-## Works amazingly with Cline + VS Code!!
-
 An MCP (Model Context Protocol) server that provides Google search capabilities and webpage content analysis tools. This server enables AI models to perform Google searches and analyze webpage content programmatically.
 
 ## Features
 
-- Google Custom Search integration
-- Webpage content analysis
-- Batch webpage analysis
-- MCP-compliant interface
+- Advanced Google Search with filtering options (date, language, country, safe search)
+- Detailed webpage content extraction and analysis
+- Batch webpage analysis for comparing multiple sources
+- Environment variable support for API credentials
+- Comprehensive error handling and user feedback
+- MCP-compliant interface for seamless integration with AI assistants
 
 ## Prerequisites
 
@@ -21,56 +21,130 @@ An MCP (Model Context Protocol) server that provides Google search capabilities 
 
 ## Installation
 
-1. Clone the repository
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/google-search-mcp.git
+   cd google-search-mcp
+   ```
+
 2. Install Node.js dependencies:
-```bash
-npm install
-```
+   ```bash
+   npm install
+   ```
 
 3. Install Python dependencies:
-```bash
-pip install flask google-api-python-client flask-cors
-```
+   ```bash
+   pip install flask google-api-python-client flask-cors beautifulsoup4 trafilatura markdownify
+   ```
+
+4. Build the TypeScript code:
+   ```bash
+   npm run build
+   ```
+
+5. Create a helper script to start the Python servers (Windows example):
+   ```bash
+   # Create start-python-servers.cmd
+   @echo off
+   echo Starting Python servers for Google Search MCP...
+   
+   REM Start Python search server
+   start "Google Search API" cmd /k "python google_search.py"
+   
+   REM Start Python link viewer
+   start "Link Viewer" cmd /k "python link_view.py"
+   
+   echo Python servers started. You can close this window.
+   ```
 
 ## Configuration
 
-1. Create a `api-keys.json` file in the root directory with your Google API credentials:
-```json
-{
-    "api_key": "your-google-api-key",
-    "search_engine_id": "your-custom-search-engine-id"
-}
-```
+### API Credentials
 
-2. Add the server configuration to your MCP settings file (typically located at `%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`):
+You can provide Google API credentials in two ways:
+
+1. **Environment Variables** (Recommended):
+   - Set `GOOGLE_API_KEY` and `GOOGLE_SEARCH_ENGINE_ID` in your environment
+   - The server will automatically use these values
+
+2. **Configuration File**:
+   - Create an `api-keys.json` file in the root directory:
+   ```json
+   {
+       "api_key": "your-google-api-key",
+       "search_engine_id": "your-custom-search-engine-id"
+   }
+   ```
+
+### MCP Settings Configuration
+
+Add the server configuration to your MCP settings file:
+
+#### For Cline (VS Code Extension)
+File location: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+
 ```json
 {
   "mcpServers": {
     "google-search": {
-      "command": "npm",
-      "args": ["run", "start:all"],
-      "cwd": "/path/to/google-search-server"
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["C:\\path\\to\\google-search-mcp\\dist\\google-search.js"],
+      "cwd": "C:\\path\\to\\google-search-mcp",
+      "env": {
+        "GOOGLE_API_KEY": "your-google-api-key",
+        "GOOGLE_SEARCH_ENGINE_ID": "your-custom-search-engine-id"
+      },
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }
 ```
 
-## Building
+#### For Claude Desktop App
+File location: `%APPDATA%\Claude\claude_desktop_config.json`
 
-```bash
-npm run build
+```json
+{
+  "mcpServers": {
+    "google-search": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["C:\\path\\to\\google-search-mcp\\dist\\google-search.js"],
+      "cwd": "C:\\path\\to\\google-search-mcp",
+      "env": {
+        "GOOGLE_API_KEY": "your-google-api-key",
+        "GOOGLE_SEARCH_ENGINE_ID": "your-custom-search-engine-id"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
 ```
 
-## Running
+## Running the Server
 
-Start both the TypeScript and Python servers:
+### Method 1: Start Python Servers Separately (Recommended)
+
+1. First, start the Python servers using the helper script:
+   ```bash
+   start-python-servers.cmd
+   ```
+
+2. Configure the MCP settings to run only the Node.js server:
+   ```json
+   {
+     "command": "C:\\Program Files\\nodejs\\node.exe",
+     "args": ["C:\\path\\to\\google-search-mcp\\dist\\google-search.js"]
+   }
+   ```
+
+### Method 2: All-in-One Script
+
+Start both the TypeScript and Python servers with a single command:
 ```bash
 npm run start:all
 ```
-
-Or run them separately:
-- TypeScript server: `npm start`
-- Python servers: `npm run start:python`
 
 ## Available Tools
 
@@ -82,7 +156,11 @@ Search Google and return relevant results from the web. This tool finds web page
   "name": "google_search",
   "arguments": {
     "query": "your search query",
-    "num_results": 5 // optional, default: 5
+    "num_results": 5, // optional, default: 5, max: 10
+    "date_restrict": "w1", // optional, restrict to past day (d1), week (w1), month (m1), year (y1)
+    "language": "en", // optional, ISO 639-1 language code (en, es, fr, de, ja, etc.)
+    "country": "us", // optional, ISO 3166-1 alpha-2 country code (us, uk, ca, au, etc.)
+    "safe_search": "medium" // optional, safe search level: "off", "medium", "high"
   }
 }
 ```
@@ -112,6 +190,33 @@ Extract and analyze content from multiple webpages in a single request. Ideal fo
     ]
   }
 }
+```
+
+## Example Usage
+
+Here are some examples of how to use the Google Search MCP tools:
+
+### Basic Search
+```
+Search for information about artificial intelligence
+```
+
+### Advanced Search with Filters
+```
+Search for recent news about climate change from the past week in Spanish
+```
+
+### Content Extraction
+```
+Extract the content from https://example.com/article
+```
+
+### Multiple Content Comparison
+```
+Compare information from these websites:
+- https://site1.com/topic
+- https://site2.com/topic
+- https://site3.com/topic
 ```
 
 ## Getting Google API Credentials

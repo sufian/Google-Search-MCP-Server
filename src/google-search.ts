@@ -28,6 +28,23 @@ class GoogleSearchServer {
                 num_results: { 
                   type: 'number', 
                   description: 'Number of results to return (default: 5, max: 10). Increase for broader coverage, decrease for faster response.'
+                },
+                date_restrict: {
+                  type: 'string',
+                  description: 'Restrict results to a specific time period. Format: [d|w|m|y][number] e.g., "d1" (past day), "w2" (past 2 weeks), "m3" (past 3 months), "y1" (past year).'
+                },
+                language: {
+                  type: 'string',
+                  description: 'Restrict results to a specific language using ISO 639-1 codes. Examples: "en" (English), "es" (Spanish), "fr" (French), "de" (German), "ja" (Japanese).'
+                },
+                country: {
+                  type: 'string',
+                  description: 'Restrict results to a specific country using ISO 3166-1 alpha-2 codes. Examples: "us" (United States), "uk" (United Kingdom), "ca" (Canada), "au" (Australia).'
+                },
+                safe_search: {
+                  type: 'string',
+                  enum: ['off', 'medium', 'high'],
+                  description: 'Safe search level: "off" (no filtering), "medium" (moderate filtering), "high" (strict filtering).'
                 }
               },
               required: ['query']
@@ -82,6 +99,23 @@ class GoogleSearchServer {
               num_results: { 
                 type: 'number', 
                 description: 'Number of results to return (default: 5, max: 10). Increase for broader coverage, decrease for faster response.'
+              },
+              date_restrict: {
+                type: 'string',
+                description: 'Restrict results to a specific time period. Format: [d|w|m|y][number] e.g., "d1" (past day), "w2" (past 2 weeks), "m3" (past 3 months), "y1" (past year).'
+              },
+              language: {
+                type: 'string',
+                description: 'Restrict results to a specific language using ISO 639-1 codes. Examples: "en" (English), "es" (Spanish), "fr" (French), "de" (German), "ja" (Japanese).'
+              },
+              country: {
+                type: 'string',
+                description: 'Restrict results to a specific country using ISO 3166-1 alpha-2 codes. Examples: "us" (United States), "uk" (United Kingdom), "ca" (Canada), "au" (Australia).'
+              },
+              safe_search: {
+                type: 'string',
+                enum: ['off', 'medium', 'high'],
+                description: 'Safe search level: "off" (no filtering), "medium" (moderate filtering), "high" (strict filtering).'
               }
             },
             required: ['query']
@@ -124,9 +158,14 @@ class GoogleSearchServer {
       switch (request.params.name) {
         case 'google_search':
           if (typeof request.params.arguments === 'object' && request.params.arguments !== null && 'query' in request.params.arguments) {
+            const args = request.params.arguments;
             return this.handleSearch({
-              query: String(request.params.arguments.query),
-              num_results: typeof request.params.arguments.num_results === 'number' ? request.params.arguments.num_results : undefined
+              query: String(args.query),
+              num_results: typeof args.num_results === 'number' ? args.num_results : undefined,
+              date_restrict: typeof args.date_restrict === 'string' ? args.date_restrict : undefined,
+              language: typeof args.language === 'string' ? args.language : undefined,
+              country: typeof args.country === 'string' ? args.country : undefined,
+              safe_search: typeof args.safe_search === 'string' ? args.safe_search : undefined
             });
           }
           throw new Error('Invalid arguments for google_search tool');
@@ -153,7 +192,14 @@ class GoogleSearchServer {
     });
   }
 
-  private async handleSearch(args: { query: string; num_results?: number }) {
+  private async handleSearch(args: { 
+    query: string; 
+    num_results?: number;
+    date_restrict?: string;
+    language?: string;
+    country?: string;
+    safe_search?: string;
+  }) {
     // Validate input
     if (!args.query.trim()) {
       return {
@@ -173,6 +219,10 @@ class GoogleSearchServer {
       const response = await axios.post<SearchResponse>('http://localhost:5000/search', {
         query: args.query,
         num_results: args.num_results || 5,
+        date_restrict: args.date_restrict,
+        language: args.language,
+        country: args.country,
+        safe_search: args.safe_search
       });
 
       if (!response.data.results?.length) {

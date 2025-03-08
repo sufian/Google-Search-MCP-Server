@@ -16,16 +16,22 @@ class MCPServer:
         self.load_settings()
     
     def load_settings(self):
-        """Load Google API credentials from api-keys.json"""
+        """Load Google API credentials from environment variables or api-keys.json"""
         try:
-            with open('api-keys.json', 'r') as f:
-                config = json.load(f)
+            # First try to get from environment variables
+            self.api_key = os.environ.get('GOOGLE_API_KEY')
+            self.cse_id = os.environ.get('GOOGLE_SEARCH_ENGINE_ID')
             
-            self.api_key = config.get('api_key')
-            self.cse_id = config.get('search_engine_id')
+            # If not found in environment variables, try api-keys.json
+            if not self.api_key or not self.cse_id:
+                with open('api-keys.json', 'r') as f:
+                    config = json.load(f)
+                
+                self.api_key = config.get('api_key')
+                self.cse_id = config.get('search_engine_id')
             
             if not self.api_key or not self.cse_id:
-                raise ValueError("Missing api_key or search_engine_id in api-keys.json")
+                raise ValueError("Missing API credentials. Please set GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID environment variables or configure api-keys.json")
             
             self.initialize_google_search()
         except Exception as e:
@@ -35,17 +41,42 @@ class MCPServer:
         """Initialize Google Custom Search API service"""
         self.search_service = build("customsearch", "v1", developerKey=self.api_key)
     
-    def perform_search(self, query: str, num_results: int = 10) -> List[Dict]:
-        """Perform a Google search and return formatted results"""
+    def perform_search(self, query: str, num_results: int = 10, date_restrict: str = None, 
+                      language: str = None, country: str = None, safe_search: str = None) -> List[Dict]:
+        """
+        Perform a Google search and return formatted results
+        
+        Parameters:
+        - query: Search query string
+        - num_results: Number of results to return (max 10)
+        - date_restrict: Restrict results to a date range (e.g., 'd1', 'w2', 'm3', 'y1')
+        - language: Restrict results to a specific language (e.g., 'en', 'es', 'fr')
+        - country: Restrict results to a specific country (e.g., 'us', 'uk', 'ca')
+        - safe_search: Safe search level ('off', 'medium', 'high')
+        """
         if not self.search_service:
             raise ValueError("Google Search API not initialized")
             
         try:
-            result = self.search_service.cse().list(
-                q=query,
-                cx=self.cse_id,
-                num=min(num_results, 10)
-            ).execute()
+            # Build search parameters
+            search_params = {
+                'q': query,
+                'cx': self.cse_id,
+                'num': min(num_results, 10)
+            }
+            
+            # Add optional parameters if provided
+            if date_restrict:
+                search_params['dateRestrict'] = date_restrict
+            if language:
+                search_params['lr'] = f'lang_{language}'
+            if country:
+                search_params['cr'] = f'country{country.upper()}'
+            if safe_search:
+                search_params['safe'] = safe_search
+                
+            # Execute search with parameters
+            result = self.search_service.cse().list(**search_params).execute()
             
             formatted_results = []
             if 'items' in result:
@@ -81,10 +112,23 @@ def search():
     if not data or 'query' not in data:
         return jsonify({'error': 'Missing search query'}), 400
         
+    # Extract search parameters
+    query = data['query']
     num_results = data.get('num_results', 10)
+    date_restrict = data.get('date_restrict')
+    language = data.get('language')
+    country = data.get('country')
+    safe_search = data.get('safe_search')
     
     try:
-        results = mcp.perform_search(data['query'], num_results)
+        results = mcp.perform_search(
+            query=query, 
+            num_results=num_results,
+            date_restrict=date_restrict,
+            language=language,
+            country=country,
+            safe_search=safe_search
+        )
         return jsonify({'results': results}), 200
     except Exception as e:
         return jsonify({'error': f'Search failed: {str(e)}'}), 500
