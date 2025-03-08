@@ -72,12 +72,12 @@ Or run them separately:
 
 ## Available Tools
 
-### 1. search
-Perform Google searches and retrieve results.
+### 1. google_search
+Search Google and return relevant results from the web. This tool finds web pages, articles, and information on specific topics using Google's search engine.
 
 ```typescript
 {
-  "name": "search",
+  "name": "google_search",
   "arguments": {
     "query": "your search query",
     "num_results": 5 // optional, default: 5
@@ -85,24 +85,24 @@ Perform Google searches and retrieve results.
 }
 ```
 
-### 2. analyze_webpage
-Extract and analyze content from a single webpage.
+### 2. extract_webpage_content
+Extract and analyze content from a webpage, converting it to readable text. This tool fetches the main content while removing ads, navigation elements, and other clutter.
 
 ```typescript
 {
-  "name": "analyze_webpage",
+  "name": "extract_webpage_content",
   "arguments": {
     "url": "https://example.com"
   }
 }
 ```
 
-### 3. batch_analyze_webpages
-Analyze multiple webpages in a single request.
+### 3. extract_multiple_webpages
+Extract and analyze content from multiple webpages in a single request. Ideal for comparing information across different sources or gathering comprehensive information on a topic.
 
 ```typescript
 {
-  "name": "batch_analyze_webpages",
+  "name": "extract_multiple_webpages",
   "arguments": {
     "urls": [
       "https://example1.com",

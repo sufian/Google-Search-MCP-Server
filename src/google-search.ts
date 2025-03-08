@@ -16,8 +16,8 @@ class GoogleSearchServer {
     }, {
       capabilities: {
         tools: {
-          search: {
-            description: 'Search Google and return relevant results. Use this tool to find web pages, articles, and information on specific topics. Results include titles, snippets, and URLs that can be analyzed further using analyze_webpage.',
+          google_search: {
+            description: 'Search Google and return relevant results from the web. This tool finds web pages, articles, and information on specific topics using Google\'s search engine. Results include titles, snippets, and URLs that can be analyzed further using extract_webpage_content.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -33,28 +33,28 @@ class GoogleSearchServer {
               required: ['query']
             }
           },
-          analyze_webpage: {
-            description: 'Analyze and extract content from a webpage. This tool fetches the main content, removing ads and navigation elements. Use it to get detailed information from specific pages found via search. Handles most common webpage formats including articles, blogs, and documentation.',
+          extract_webpage_content: {
+            description: 'Extract and analyze content from a webpage, converting it to readable text. This tool fetches the main content while removing ads, navigation elements, and other clutter. Use it to get detailed information from specific pages found via google_search. Works with most common webpage formats including articles, blogs, and documentation.',
             inputSchema: {
               type: 'object',
               properties: {
                 url: { 
                   type: 'string', 
-                  description: 'Full URL of the webpage to analyze (must start with http:// or https://). Ensure the URL is from a public webpage and not behind authentication.'
+                  description: 'Full URL of the webpage to extract content from (must start with http:// or https://). Ensure the URL is from a public webpage and not behind authentication.'
                 }
               },
               required: ['url']
             }
           },
-          batch_analyze_webpages: {
-            description: 'Analyze and extract content from multiple webpages simultaneously. Ideal for comparing information across different sources or gathering comprehensive information on a topic. Limited to 5 URLs per request to maintain performance.',
+          extract_multiple_webpages: {
+            description: 'Extract and analyze content from multiple webpages in a single request. This tool is ideal for comparing information across different sources or gathering comprehensive information on a topic. Limited to 5 URLs per request to maintain performance.',
             inputSchema: {
               type: 'object',
               properties: {
                 urls: { 
                   type: 'array',
                   items: { type: 'string' },
-                  description: 'Array of webpage URLs to analyze. Each URL must be public and start with http:// or https://. Maximum 5 URLs per request.'
+                  description: 'Array of webpage URLs to extract content from. Each URL must be public and start with http:// or https://. Maximum 5 URLs per request.'
                 }
               },
               required: ['urls']
@@ -70,8 +70,8 @@ class GoogleSearchServer {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
-          name: 'search',
-          description: 'Search Google and return relevant results. Use this tool to find web pages, articles, and information on specific topics. Results include titles, snippets, and URLs that can be analyzed further using analyze_webpage.',
+          name: 'google_search',
+          description: 'Search Google and return relevant results from the web. This tool finds web pages, articles, and information on specific topics using Google\'s search engine. Results include titles, snippets, and URLs that can be analyzed further using extract_webpage_content.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -88,29 +88,29 @@ class GoogleSearchServer {
           }
         },
         {
-          name: 'analyze_webpage',
-          description: 'Analyze and extract content from a webpage. This tool fetches the main content, removing ads and navigation elements. Use it to get detailed information from specific pages found via search. Handles most common webpage formats including articles, blogs, and documentation.',
+          name: 'extract_webpage_content',
+          description: 'Extract and analyze content from a webpage, converting it to readable text. This tool fetches the main content while removing ads, navigation elements, and other clutter. Use it to get detailed information from specific pages found via google_search. Works with most common webpage formats including articles, blogs, and documentation.',
           inputSchema: {
             type: 'object',
             properties: {
               url: { 
                 type: 'string', 
-                description: 'Full URL of the webpage to analyze (must start with http:// or https://). Ensure the URL is from a public webpage and not behind authentication.'
+                description: 'Full URL of the webpage to extract content from (must start with http:// or https://). Ensure the URL is from a public webpage and not behind authentication.'
               }
             },
             required: ['url']
           }
         },
         {
-          name: 'batch_analyze_webpages',
-          description: 'Analyze and extract content from multiple webpages simultaneously. Ideal for comparing information across different sources or gathering comprehensive information on a topic. Limited to 5 URLs per request to maintain performance.',
+          name: 'extract_multiple_webpages',
+          description: 'Extract and analyze content from multiple webpages in a single request. This tool is ideal for comparing information across different sources or gathering comprehensive information on a topic. Limited to 5 URLs per request to maintain performance.',
           inputSchema: {
             type: 'object',
             properties: {
               urls: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Array of webpage URLs to analyze. Each URL must be public and start with http:// or https://. Maximum 5 URLs per request.'
+                description: 'Array of webpage URLs to extract content from. Each URL must be public and start with http:// or https://. Maximum 5 URLs per request.'
               }
             },
             required: ['urls']
@@ -120,32 +120,32 @@ class GoogleSearchServer {
     }));
 
     // Register tool call handler
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       switch (request.params.name) {
-        case 'search':
+        case 'google_search':
           if (typeof request.params.arguments === 'object' && request.params.arguments !== null && 'query' in request.params.arguments) {
             return this.handleSearch({
               query: String(request.params.arguments.query),
               num_results: typeof request.params.arguments.num_results === 'number' ? request.params.arguments.num_results : undefined
             });
           }
-          throw new Error('Invalid arguments for search tool');
+          throw new Error('Invalid arguments for google_search tool');
 
-        case 'analyze_webpage':
+        case 'extract_webpage_content':
           if (typeof request.params.arguments === 'object' && request.params.arguments !== null && 'url' in request.params.arguments) {
             return this.handleAnalyzeWebpage({
               url: String(request.params.arguments.url)
             });
           }
-          throw new Error('Invalid arguments for analyze_webpage tool');
+          throw new Error('Invalid arguments for extract_webpage_content tool');
 
-        case 'batch_analyze_webpages':
+        case 'extract_multiple_webpages':
           if (typeof request.params.arguments === 'object' && request.params.arguments !== null && 'urls' in request.params.arguments && Array.isArray(request.params.arguments.urls)) {
             return this.handleBatchAnalyzeWebpages({
               urls: request.params.arguments.urls.map(String)
             });
           }
-          throw new Error('Invalid arguments for batch_analyze_webpages tool');
+          throw new Error('Invalid arguments for extract_multiple_webpages tool');
 
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -193,7 +193,7 @@ class GoogleSearchServer {
           },
         ],
       };
-    } catch (error) {
+    } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
         const message = error.response?.status === 429 
           ? 'Search quota exceeded. Please try again later.'
@@ -204,7 +204,16 @@ class GoogleSearchServer {
           isError: true
         };
       }
-      throw error;
+      if (error instanceof Error) {
+        return {
+          content: [{ type: 'text', text: `Search failed: ${error.message}` }],
+          isError: true
+        };
+      }
+      return {
+        content: [{ type: 'text', text: 'Search failed: Unknown error' }],
+        isError: true
+      };
     }
   }
 
@@ -243,7 +252,7 @@ class GoogleSearchServer {
           },
         ],
       };
-    } catch (error) {
+    } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const helpText = 'Common issues:\n- Check if the URL is accessible in a browser\n- Ensure the webpage is public\n- Try again if it\'s a temporary network issue';
       
@@ -317,7 +326,7 @@ class GoogleSearchServer {
           },
         ],
       };
-    } catch (error) {
+    } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const helpText = 'Common issues:\n- Check if all URLs are accessible in a browser\n- Ensure all webpages are public\n- Try again if it\'s a temporary network issue\n- Consider reducing the number of URLs';
       
@@ -344,8 +353,12 @@ class GoogleSearchServer {
         this.server.close().catch(console.error);
         process.exit(0);
       });
-    } catch (error) {
-      console.error('Failed to start MCP server:', error);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Failed to start MCP server:', error.message);
+      } else {
+        console.error('Failed to start MCP server: Unknown error');
+      }
       process.exit(1);
     }
   }
