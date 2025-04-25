@@ -1,0 +1,736 @@
+# Model Context Protocol (MCP) Client Implementation Guide
+
+## Introduction
+
+The Model Context Protocol (MCP) is an open standard that enables seamless integration between LLM applications and external data sources and tools. Similar to how the Language Server Protocol (LSP) standardized the connection between code editors and language servers, MCP standardizes how AI models interact with external resources.
+
+This guide focuses specifically on implementing the **client side** of MCP, which is responsible for establishing and maintaining connections with MCP servers to leverage their capabilities.
+
+## What is an MCP Client?
+
+In the MCP architecture, a client is a component that:
+
+- Maintains 1:1 connections with MCP servers
+- Requests capabilities like tools, resources, and prompts from servers
+- Passes these capabilities to an LLM for use
+- Handles the execution of tool calls when requested by the LLM
+- Manages communication protocols (stdio, HTTP/SSE, etc.)
+
+## Prerequisites
+
+Before implementing an MCP client, ensure you have:
+
+1. A development environment with your preferred language (Python, TypeScript, etc.)
+2. Basic understanding of async programming (as most MCP operations are asynchronous)
+3. Access to MCP servers you want to connect to
+4. Familiarity with the LLM platform you're integrating with
+
+## MCP Client Implementation Steps
+
+### 1. Choose Your SDK
+
+MCP offers official SDKs for various languages:
+
+- **Python SDK**: For Python applications
+- **TypeScript/JavaScript SDK**: For web/Node.js applications
+- **Swift SDK**: For iOS/macOS applications
+
+For this guide, we'll provide examples in both Python and TypeScript.
+
+### 2. Install Dependencies
+
+#### Python
+
+```python
+# Using uv (recommended)
+uv init mcp-client
+cd mcp-client
+uv venv
+# Activate virtual environment
+# On Windows: .venv\Scripts\activate
+# On Unix or MacOS: source .venv/bin/activate
+uv add mcp
+```
+
+#### TypeScript/JavaScript
+
+```bash
+# Using npm
+mkdir mcp-client
+cd mcp-client
+npm init -y
+npm install @modelcontextprotocol/client
+```
+
+### 3. Establish Connection with MCP Server
+
+MCP clients can connect to servers using different transport methods:
+
+#### Stdio Transport (Local Server)
+
+This method runs the server as a subprocess and communicates via standard input/output.
+
+##### Python Example
+
+```python
+import asyncio
+from mcp import ClientSession
+from mcp.client.stdio import stdio_client
+from mcp import StdioServerParameters
+
+async def main():
+    # Define server parameters (command to start server)
+    server_params = StdioServerParameters(
+        command="npx",  # Command to run
+        args=["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"]  # Arguments
+    )
+    
+    # Connect to the server
+    async with stdio_client(server_params) as (read, write):
+        # Create a client session
+        async with ClientSession(read, write) as session:
+            # Initialize the session
+            await session.initialize()
+            
+            # Now you can interact with the server
+            # ...
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+##### TypeScript Example
+
+```typescript
+import { createStdioClient, StdioServerParameters } from '@modelcontextprotocol/client';
+
+async function main() {
+    // Define server parameters
+    const serverParams: StdioServerParameters = {
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/files']
+    };
+    
+    // Create client and session
+    const client = await createStdioClient(serverParams);
+    const session = await client.createSession();
+    
+    // Initialize session
+    await session.initialize();
+    
+    // Now you can interact with the server
+    // ...
+}
+
+main().catch(console.error);
+```
+
+#### HTTP/SSE Transport (Remote Server)
+
+For servers available over HTTP with Server-Sent Events (SSE).
+
+##### Python Example
+
+```python
+import asyncio
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+from mcp.client.types import SseServerParameters
+
+async def main():
+    # Define server parameters
+    server_params = SseServerParameters(
+        url="https://your-mcp-server.com",  # Server URL
+        headers={"Authorization": "Bearer your-token"}  # Optional headers
+    )
+    
+    # Connect to the server
+    async with sse_client(server_params) as (read, write):
+        # Create a client session
+        async with ClientSession(read, write) as session:
+            # Initialize the session
+            await session.initialize()
+            
+            # Now you can interact with the server
+            # ...
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+##### TypeScript Example
+
+```typescript
+import { createSseClient, SseServerParameters } from '@modelcontextprotocol/client';
+
+async function main() {
+    // Define server parameters
+    const serverParams: SseServerParameters = {
+        url: 'https://your-mcp-server.com',
+        headers: { 'Authorization': 'Bearer your-token' }
+    };
+    
+    // Create client and session
+    const client = await createSseClient(serverParams);
+    const session = await client.createSession();
+    
+    // Initialize session
+    await session.initialize();
+    
+    // Now you can interact with the server
+    // ...
+}
+
+main().catch(console.error);
+```
+
+### 4. Discover Server Capabilities
+
+After establishing a connection, you need to discover what capabilities the server offers:
+
+#### Python Example
+
+```python
+async def discover_capabilities(session):
+    # List available tools
+    tools_response = await session.list_tools()
+    tools = tools_response.tools
+    print(f"Available tools: {[tool.name for tool in tools]}")
+    
+    # List available resources
+    try:
+        resources_response = await session.list_resources()
+        resources = resources_response.resources
+        print(f"Available resources: {[resource.name for resource in resources]}")
+    except Exception as e:
+        # Not all servers implement resources
+        print(f"No resources available: {e}")
+    
+    # List available prompts
+    try:
+        prompts_response = await session.list_prompts()
+        prompts = prompts_response.prompts
+        print(f"Available prompts: {[prompt.name for prompt in prompts]}")
+    except Exception as e:
+        # Not all servers implement prompts
+        print(f"No prompts available: {e}")
+    
+    return tools, resources, prompts
+```
+
+#### TypeScript Example
+
+```typescript
+async function discoverCapabilities(session) {
+    // List available tools
+    const toolsResponse = await session.listTools();
+    const tools = toolsResponse.tools;
+    console.log(`Available tools: ${tools.map(tool => tool.name)}`);
+    
+    // List available resources
+    try {
+        const resourcesResponse = await session.listResources();
+        const resources = resourcesResponse.resources;
+        console.log(`Available resources: ${resources.map(resource => resource.name)}`);
+    } catch (e) {
+        // Not all servers implement resources
+        console.log(`No resources available: ${e}`);
+    }
+    
+    // List available prompts
+    try {
+        const promptsResponse = await session.listPrompts();
+        const prompts = promptsResponse.prompts;
+        console.log(`Available prompts: ${prompts.map(prompt => prompt.name)}`);
+    } catch (e) {
+        // Not all servers implement prompts
+        console.log(`No prompts available: ${e}`);
+    }
+    
+    return { tools, resources, prompts };
+}
+```
+
+### 5. Use Server Resources
+
+Resources provide context data to the LLM:
+
+#### Python Example
+
+```python
+async def get_resource(session, resource_name, params=None):
+    try:
+        resource_response = await session.get_resource(resource_name, params or {})
+        return resource_response.value
+    except Exception as e:
+        print(f"Error getting resource {resource_name}: {e}")
+        return None
+```
+
+#### TypeScript Example
+
+```typescript
+async function getResource(session, resourceName, params = {}) {
+    try {
+        const resourceResponse = await session.getResource(resourceName, params);
+        return resourceResponse.value;
+    } catch (e) {
+        console.log(`Error getting resource ${resourceName}: ${e}`);
+        return null;
+    }
+}
+```
+
+### 6. Invoke Server Tools
+
+Tools allow the LLM to perform actions:
+
+#### Python Example
+
+```python
+async def call_tool(session, tool_name, params=None):
+    try:
+        tool_response = await session.call_tool(tool_name, params or {})
+        return tool_response.result
+    except Exception as e:
+        print(f"Error calling tool {tool_name}: {e}")
+        return None
+```
+
+#### TypeScript Example
+
+```typescript
+async function callTool(session, toolName, params = {}) {
+    try {
+        const toolResponse = await session.callTool(toolName, params);
+        return toolResponse.result;
+    } catch (e) {
+        console.log(`Error calling tool ${toolName}: ${e}`);
+        return null;
+    }
+}
+```
+
+### 7. Use Server Prompts
+
+Prompts provide templated interactions for the LLM:
+
+#### Python Example
+
+```python
+async def get_prompt(session, prompt_name, params=None):
+    try:
+        prompt_response = await session.get_prompt(prompt_name, params or {})
+        return prompt_response.messages
+    except Exception as e:
+        print(f"Error getting prompt {prompt_name}: {e}")
+        return None
+```
+
+#### TypeScript Example
+
+```typescript
+async function getPrompt(session, promptName, params = {}) {
+    try {
+        const promptResponse = await session.getPrompt(promptName, params);
+        return promptResponse.messages;
+    } catch (e) {
+        console.log(`Error getting prompt ${promptName}: ${e}`);
+        return null;
+    }
+}
+```
+
+### 8. Integrate with LLM
+
+Now you need to connect the MCP capabilities with your LLM:
+
+#### Python Example with Anthropic's Claude
+
+```python
+import os
+from anthropic import Anthropic
+
+async def chat_with_claude(client_session, user_message, tools=None):
+    # Discover available tools
+    if tools is None:
+        tools_response = await client_session.list_tools()
+        tools = tools_response.tools
+    
+    # Convert MCP tools to Claude's tool format
+    claude_tools = []
+    for tool in tools:
+        claude_tools.append({
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.parameters
+        })
+    
+    # Initialize Anthropic client
+    anthropic = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    
+    # Create a message with tools
+    response = anthropic.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1000,
+        messages=[{"role": "user", "content": user_message}],
+        tools=claude_tools
+    )
+    
+    # Check if Claude wants to use any tools
+    for content_block in response.content:
+        if content_block.type == "tool_use":
+            tool_name = content_block.name
+            tool_params = content_block.input
+            
+            # Call the tool via MCP
+            tool_result = await call_tool(client_session, tool_name, tool_params)
+            
+            # Send the tool result back to Claude
+            follow_up = anthropic.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1000,
+                messages=[
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": response.content},
+                    {"role": "tool", "name": tool_name, "content": str(tool_result)}
+                ]
+            )
+            return follow_up
+    
+    return response
+```
+
+### 9. Complete Client Example
+
+Here's a complete example of a simple MCP client implementation in Python:
+
+```python
+import asyncio
+import os
+import json
+from typing import Optional, List, Dict, Any
+from contextlib import AsyncExitStack
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from anthropic import Anthropic
+
+class MCPClientApp:
+    def __init__(self):
+        self.session: Optional[ClientSession] = None
+        self.exit_stack = AsyncExitStack()
+        self.anthropic = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        self.tools = []
+        
+    async def connect_to_server(self, server_script_path):
+        """Connect to an MCP server using stdio transport"""
+        server_params = StdioServerParameters(
+            command="python",
+            args=[server_script_path]
+        )
+        
+        read, write = await self.exit_stack.enter_async_context(stdio_client(server_params))
+        self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
+        
+        # Initialize session
+        await self.session.initialize()
+        
+        # Discover tools
+        tools_response = await self.session.list_tools()
+        self.tools = tools_response.tools
+        
+        print(f"Connected to MCP server with {len(self.tools)} tools available:")
+        for tool in self.tools:
+            print(f"- {tool.name}: {tool.description}")
+    
+    async def call_tool(self, tool_name, params=None):
+        """Call an MCP tool with parameters"""
+        if not self.session:
+            raise RuntimeError("No active MCP session")
+            
+        try:
+            tool_response = await self.session.call_tool(tool_name, params or {})
+            return tool_response.result
+        except Exception as e:
+            print(f"Error calling tool {tool_name}: {e}")
+            return None
+    
+    async def chat_loop(self):
+        """Run an interactive chat loop with Claude using MCP tools"""
+        if not self.session:
+            raise RuntimeError("No active MCP session")
+            
+        print("\nChat with Claude (using MCP tools). Type 'exit' to quit.")
+        
+        # Convert MCP tools to Claude's tool format
+        claude_tools = []
+        for tool in self.tools:
+            claude_tools.append({
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.parameters
+            })
+        
+        # Keep track of conversation
+        messages = []
+        
+        while True:
+            # Get user input
+            user_input = input("\nYou: ")
+            if user_input.lower() == 'exit':
+                break
+                
+            # Add to conversation history
+            messages.append({"role": "user", "content": user_input})
+            
+            # Send to Claude with tools
+            response = self.anthropic.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1000,
+                messages=messages,
+                tools=claude_tools
+            )
+            
+            # Process response
+            assistant_message = {"role": "assistant", "content": []}
+            for content_block in response.content:
+                if content_block.type == "text":
+                    print(f"\nClaude: {content_block.text}")
+                    assistant_message["content"].append(content_block)
+                    
+                elif content_block.type == "tool_use":
+                    tool_name = content_block.name
+                    tool_params = content_block.input
+                    
+                    print(f"\nClaude is using tool: {tool_name}")
+                    assistant_message["content"].append(content_block)
+                    
+                    # Call the tool via MCP
+                    tool_result = await self.call_tool(tool_name, tool_params)
+                    print(f"Tool result: {tool_result}")
+                    
+                    # Add tool response to conversation
+                    messages.append(assistant_message)
+                    messages.append({
+                        "role": "tool", 
+                        "name": tool_name, 
+                        "content": json.dumps(tool_result)
+                    })
+                    
+                    # Get Claude's follow-up response with the tool result
+                    follow_up = self.anthropic.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=1000,
+                        messages=messages,
+                        tools=claude_tools
+                    )
+                    
+                    # Print Claude's response after using the tool
+                    for fb_content in follow_up.content:
+                        if fb_content.type == "text":
+                            print(f"\nClaude: {fb_content.text}")
+                    
+                    # Update messages for next turn
+                    assistant_message = {"role": "assistant", "content": follow_up.content}
+            
+            # Add assistant's response to conversation history
+            messages.append(assistant_message)
+    
+    async def cleanup(self):
+        """Clean up resources"""
+        await self.exit_stack.aclose()
+
+async def main():
+    if len(sys.argv) < 2:
+        print("Usage: python client.py <path_to_server_script>")
+        sys.exit(1)
+        
+    client = MCPClientApp()
+    try:
+        await client.connect_to_server(sys.argv[1])
+        await client.chat_loop()
+    finally:
+        await client.cleanup()
+
+if __name__ == "__main__":
+    import sys
+    asyncio.run(main())
+```
+
+## Best Practices for MCP Clients
+
+1. **Error Handling**: Implement robust error handling for all MCP operations
+2. **Authentication**: Support secure authentication methods for remote servers
+3. **Rate Limiting**: Implement rate limiting to avoid overwhelming servers
+4. **Caching**: Cache server capabilities to reduce latency
+5. **Timeouts**: Set appropriate timeouts for server operations
+6. **Logging**: Implement comprehensive logging for debugging
+7. **Reconnection Logic**: Handle disconnections gracefully with reconnection attempts
+8. **Security Checks**: Validate server responses before processing
+9. **Platform Compatibility**:
+   - Handle Windows/Unix line ending differences
+   - Use binary mode for stdio on Windows
+   - Implement proper path handling
+   - Consider cross-platform transport options
+10. **Resource Management**:
+    - Clean up resources properly
+    - Monitor memory usage
+    - Handle connection pooling
+    - Implement proper shutdown procedures
+11. **Performance Optimization**:
+    - Batch requests when possible
+    - Implement response caching
+    - Use connection pooling
+    - Monitor and optimize memory usage
+
+## Platform-Specific Considerations
+
+### Windows Implementation
+
+1. **stdio Handling**:
+```python
+# Python
+if sys.platform == 'win32':
+    import msvcrt
+    msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
+    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+```
+
+```typescript
+// TypeScript
+if (process.platform === 'win32') {
+    process.stdin.setEncoding('binary');
+    process.stdout.setDefaultEncoding('binary');
+}
+```
+
+2. **Path Management**:
+```typescript
+import { join } from 'path';
+
+const configPath = join(process.cwd(), 'config.json');
+```
+
+3. **Error Handling**:
+```typescript
+process.on('uncaughtException', (error) => {
+    console.error(`Uncaught Exception: ${error.message}`);
+    process.exit(1);
+});
+```
+
+### Unix Implementation
+
+1. **Signal Handling**:
+```typescript
+process.on('SIGTERM', () => {
+    console.error('Received SIGTERM, cleaning up...');
+    // Perform cleanup
+    process.exit(0);
+});
+```
+
+2. **File Permissions**:
+```python
+import os
+os.chmod('client.sh', 0o755)
+```
+
+## Advanced Features
+
+### 1. Sampling
+
+Sampling is a powerful MCP feature where servers can request LLM completions from the client, reversing the usual flow:
+
+```python
+async def handle_sampling(session):
+    # Set up a sampling handler
+    def sampling_handler(request, extra):
+        # Process sampling request
+        prompt = request.get("prompt", "")
+        
+        # Generate completion with your LLM
+        # This is a simplified example
+        completion = generate_completion(prompt)
+        
+        # Return completion
+        return {"completion": completion}
+    
+    # Register the sampling handler
+    await session.set_sampling_handler(sampling_handler)
+```
+
+### 2. Multi-Server Management
+
+For applications that need to connect to multiple MCP servers:
+
+```python
+class McpManager:
+    def __init__(self):
+        self.servers = {}
+        
+    async def add_server(self, server_id, params):
+        """Add a new MCP server connection"""
+        if server_id in self.servers:
+            await self.remove_server(server_id)
+            
+        read, write = await stdio_client(params)
+        session = ClientSession(read, write)
+        await session.initialize()
+        
+        self.servers[server_id] = session
+        return session
+        
+    async def remove_server(self, server_id):
+        """Remove and cleanup an MCP server connection"""
+        if server_id in self.servers:
+            session = self.servers[server_id]
+            await session.shutdown()
+            del self.servers[server_id]
+```
+
+### 3. LLM-Powered MCP Development
+
+You can use LLMs like Claude to help build and debug MCP implementations:
+
+```python
+async def get_mcp_help(query):
+    """Use Claude to help with MCP development questions"""
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    
+    system_prompt = """
+    You are an expert in Model Context Protocol (MCP) development.
+    Provide specific, technical advice on implementing MCP clients and servers.
+    Include code examples when relevant.
+    """
+    
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        system=system_prompt,
+        messages=[{"role": "user", "content": query}]
+    )
+    
+    return response.content[0].text
+```
+
+## Troubleshooting Common Issues
+
+1. **Connection Failures**: Ensure server is running and accessible
+2. **Protocol Errors**: Check client and server protocol versions are compatible
+3. **Tool Execution Errors**: Validate parameters before sending to server
+4. **Authentication Issues**: Verify credentials and token validity
+5. **Timeout Errors**: Adjust timeout settings for long-running operations
+
+## Resources
+
+- [Official MCP Documentation](https://modelcontextprotocol.io/)
+- [Python SDK Repository](https://github.com/modelcontextprotocol/python-sdk)
+- [TypeScript SDK Repository](https://github.com/modelcontextprotocol/typescript-sdk)
+- [MCP Client Examples](https://modelcontextprotocol.io/clients)
+
+## Conclusion
+
+Building an MCP client allows your application to connect seamlessly with a wide range of data sources and tools through a standardized protocol. This guide covered the basics of implementing a client, from establishing connections to integrating with LLMs.
+
+As the MCP ecosystem continues to grow, your client implementation can leverage an expanding catalog of servers without requiring custom integrations for each new data source or tool.

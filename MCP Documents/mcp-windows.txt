@@ -1,0 +1,161 @@
+# Windows-Specific MCP Implementation Guide
+
+## Common Issues with stdio on Windows
+
+### 1. Line Ending Differences
+- Windows uses CRLF (`\r\n`) for line endings
+- Unix-based systems use LF (`\n`)
+- This difference can cause serious problems in stdio communication with MCP servers
+- JSON-RPC 2.0 (which MCP uses) expects consistent message framing
+
+### 2. Text vs. Binary Mode
+- Windows default text mode automatically translates line endings
+- This automatic translation can corrupt protocol data
+- Local MCP servers must not log messages to stdout
+- All protocol communication must use binary mode
+
+### 3. Console Buffering Issues
+- Windows console applications have different buffering behavior
+- Can cause timing issues or message truncation in stdio transport
+- Requires proper buffer handling in both client and server
+
+### 4. Environment Variable Inheritance
+- MCP servers inherit only a subset of environment variables automatically
+- Windows has different environment variable handling
+- May require additional configuration for proper environment setup
+
+## Best Practices for Windows Implementation
+
+### 1. Use Binary Mode for stdio Streams
+For Python implementations on Windows:
+```python
+import sys
+import os
+
+# Force binary mode for stdin/stdout
+if sys.platform == 'win32':
+    import msvcrt
+    msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
+    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+```
+
+For TypeScript/Node.js implementations:
+```typescript
+if (process.platform === 'win32') {
+    process.stdin.setEncoding('binary');
+    process.stdout.setDefaultEncoding('binary');
+}
+```
+
+### 2. Leverage Existing SDKs
+- Use official SDKs when possible
+- Python SDK includes proper Windows stdio handling
+- TypeScript SDK handles cross-platform differences
+- Avoid implementing custom stdio handling
+
+### 3. Console Output Best Practices
+- Use stderr for logging and debugging
+- Never write to stdout in server implementations
+- Log messages are automatically captured by host applications
+- Keep protocol communication separate from logging
+
+### 4. Path Handling
+- Windows uses backslashes (`\`) as path separators
+- Forward slashes (`/`) also work on Windows
+- Escape backslashes in string literals
+- Consider using path.join() for cross-platform compatibility
+
+### 5. Testing Guidelines
+- Test explicitly on Windows
+- Don't assume Unix-working code will work on Windows
+- Test with different Windows versions
+- Verify stdio behavior in various scenarios
+
+### 6. Error Handling
+- Implement platform-specific error handling
+- Handle Windows-specific exceptions
+- Add retry logic for transient issues
+- Provide detailed error messages
+
+### 7. Transport Alternatives
+- Consider HTTP+SSE for more consistent behavior
+- Use WebSocket transport when available
+- Implement fallback mechanisms
+- Document transport limitations
+
+## Implementation Examples
+
+### Basic Python MCP Server
+```python
+from mcp import Server, StdioTransport
+import sys
+import os
+
+# Windows-specific setup
+if sys.platform == 'win32':
+    import msvcrt
+    msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
+    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+
+# Create server with proper error handling
+server = Server(
+    name="windows-example",
+    version="1.0.0",
+    transport=StdioTransport()
+)
+
+# Log to stderr, not stdout
+def log_error(msg):
+    print(f"Error: {msg}", file=sys.stderr)
+
+try:
+    server.start()
+except Exception as e:
+    log_error(f"Server error: {e}")
+    sys.exit(1)
+```
+
+### Basic TypeScript MCP Server
+```typescript
+import { McpServer } from "@modelcontextprotocol/sdk/server";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/transport/stdio";
+
+// Windows-specific setup
+if (process.platform === 'win32') {
+    process.stdin.setEncoding('binary');
+    process.stdout.setDefaultEncoding('binary');
+}
+
+const server = new McpServer({
+    name: "windows-example",
+    version: "1.0.0"
+});
+
+// Error handling for Windows
+process.on('uncaughtException', (error) => {
+    console.error(`Uncaught Exception: ${error.message}`);
+    process.exit(1);
+});
+
+const transport = new StdioServerTransport();
+server.listen(transport).catch((error) => {
+    console.error(`Server Error: ${error.message}`);
+    process.exit(1);
+});
+```
+
+## Best Practices Summary
+
+1. **Always Use Binary Mode**: Prevent line ending translation issues
+2. **Proper Error Handling**: Account for Windows-specific exceptions
+3. **Path Management**: Handle Windows path separators correctly
+4. **Testing**: Verify functionality specifically on Windows
+5. **SDK Usage**: Leverage official SDKs for platform compatibility
+6. **Logging**: Use stderr for debugging, keep stdout clean
+7. **Transport Options**: Consider alternatives to stdio when needed
+
+## Additional Resources
+
+- [Official MCP Windows Documentation](https://modelcontextprotocol.io/docs/windows)
+- [Windows-Specific Examples](https://github.com/modelcontextprotocol/examples/windows)
+- [Troubleshooting Guide](https://modelcontextprotocol.io/docs/troubleshooting#windows)
