@@ -1,4 +1,5 @@
 # Google Search MCP Server
+# Version 2.0 is here!!
 
 An MCP (Model Context Protocol) server that provides Google search capabilities and webpage content analysis tools. This server enables AI models to perform Google searches and analyze webpage content programmatically.
 
