@@ -1,5 +1,5 @@
 # Version 2.0 is here!!
-# NEWS - my NEW KiCAD MCP Server is here, along with this Google Search MCP server they are a powerful duo!
+# NEWS - my NEW 'KiCAD MCP Server' is here, along with this 'Google Search MCP Server' they are a powerful duo!
 https://github.com/mixelpixx/KiCAD-MCP-Server
 
 # Google Search MCP Server
