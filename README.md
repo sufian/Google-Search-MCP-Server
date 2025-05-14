@@ -1,6 +1,4 @@
-# Version 2.0 is here!!
-# NEWS - my NEW 'KiCAD MCP Server' is here, along with this 'Google Search MCP Server' they are a powerful duo!
-https://github.com/mixelpixx/KiCAD-MCP-Server
+# Version 2.0 is here
 
 # Google Search MCP Server
 An MCP (Model Context Protocol) server that provides Google search capabilities and webpage content analysis tools. This server enables AI models to perform Google searches and analyze webpage content programmatically.
