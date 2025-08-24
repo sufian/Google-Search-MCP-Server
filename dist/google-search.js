@@ -1,238 +1,143 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import express from 'express';
 import { GoogleSearchService } from './services/google-search.service.js';
 import { ContentExtractor } from './services/content-extractor.service.js';
 class GoogleSearchServer {
     constructor() {
         this.searchService = new GoogleSearchService();
         this.contentExtractor = new ContentExtractor();
-        this.server = new Server({
-            name: 'google-search',
-            version: '1.0.0'
-        }, {
-            capabilities: {
-                tools: {
-                    google_search: {
-                        description: 'Search Google and return relevant results from the web. This tool finds web pages, articles, and information on specific topics using Google\'s search engine. Results include titles, snippets, and URLs that can be analyzed further using extract_webpage_content.',
-                        inputSchema: {
-                            type: 'object',
-                            properties: {
-                                query: {
-                                    type: 'string',
-                                    description: 'Search query - be specific and use quotes for exact matches. For best results, use clear keywords and avoid very long queries.'
-                                },
-                                num_results: {
-                                    type: 'number',
-                                    description: 'Number of results to return (default: 5, max: 10). Increase for broader coverage, decrease for faster response.'
-                                },
-                                site: {
-                                    type: 'string',
-                                    description: 'Limit search results to a specific website domain (e.g., "wikipedia.org" or "nytimes.com").'
-                                },
-                                language: {
-                                    type: 'string',
-                                    description: 'Filter results by language using ISO 639-1 codes (e.g., "en" for English, "es" for Spanish, "fr" for French).'
-                                },
-                                dateRestrict: {
-                                    type: 'string',
-                                    description: 'Filter results by date using Google\'s date restriction format: "d[number]" for past days, "w[number]" for past weeks, "m[number]" for past months, or "y[number]" for past years. Example: "m6" for results from the past 6 months.'
-                                },
-                                exactTerms: {
-                                    type: 'string',
-                                    description: 'Search for results that contain this exact phrase. This is equivalent to putting the terms in quotes in the search query.'
-                                },
-                                resultType: {
-                                    type: 'string',
-                                    description: 'Specify the type of results to return. Options include "image" (or "images"), "news", and "video" (or "videos"). Default is general web results.'
-                                },
-                                page: {
-                                    type: 'number',
-                                    description: 'Page number for paginated results (starts at 1). Use in combination with resultsPerPage to navigate through large result sets.'
-                                },
-                                resultsPerPage: {
-                                    type: 'number',
-                                    description: 'Number of results to show per page (default: 5, max: 10). Controls how many results are returned for each page.'
-                                },
-                                sort: {
-                                    type: 'string',
-                                    description: 'Sorting method for search results. Options: "relevance" (default) or "date" (most recent first).'
-                                }
-                            },
-                            required: ['query']
+        this.app = express();
+        this.setupMiddleware();
+        this.setupRoutes();
+    }
+    setupMiddleware() {
+        this.app.use(express.json());
+        this.app.use((req, res, next) => {
+            res.header('Access-Control-Allow-Origin', '*');
+            res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+            res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+            next();
+        });
+    }
+    setupRoutes() {
+        this.app.get('/health', (req, res) => {
+            res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+        });
+        this.app.get('/tools', (req, res) => {
+            res.json({
+                tools: [
+                    {
+                        name: 'google_search',
+                        description: 'Search Google and return relevant results from the web.',
+                        parameters: {
+                            query: { type: 'string', required: true, description: 'Search query' },
+                            num_results: { type: 'number', description: 'Number of results (default: 5, max: 10)' },
+                            site: { type: 'string', description: 'Limit to specific domain' },
+                            language: { type: 'string', description: 'Language filter (ISO 639-1 codes)' },
+                            dateRestrict: { type: 'string', description: 'Date restriction (d[n], w[n], m[n], y[n])' },
+                            exactTerms: { type: 'string', description: 'Exact phrase search' },
+                            resultType: { type: 'string', description: 'Result type (image, news, video)' },
+                            page: { type: 'number', description: 'Page number for pagination' },
+                            resultsPerPage: { type: 'number', description: 'Results per page' },
+                            sort: { type: 'string', description: 'Sort method (relevance, date)' }
                         }
                     },
-                    extract_webpage_content: {
-                        description: 'Extract and analyze content from a webpage, converting it to readable text. This tool fetches the main content while removing ads, navigation elements, and other clutter. Use it to get detailed information from specific pages found via google_search. Works with most common webpage formats including articles, blogs, and documentation.',
-                        inputSchema: {
-                            type: 'object',
-                            properties: {
-                                url: {
-                                    type: 'string',
-                                    description: 'Full URL of the webpage to extract content from (must start with http:// or https://). Ensure the URL is from a public webpage and not behind authentication.'
-                                },
-                                format: {
-                                    type: 'string',
-                                    description: 'Output format for the extracted content. Options: "markdown" (default), "html", or "text".'
-                                }
-                            },
-                            required: ['url']
+                    {
+                        name: 'extract_webpage_content',
+                        description: 'Extract and analyze content from a webpage.',
+                        parameters: {
+                            url: { type: 'string', required: true, description: 'URL to extract content from' },
+                            format: { type: 'string', description: 'Output format (markdown, html, text)' }
                         }
                     },
-                    extract_multiple_webpages: {
-                        description: 'Extract and analyze content from multiple webpages in a single request. This tool is ideal for comparing information across different sources or gathering comprehensive information on a topic. Limited to 5 URLs per request to maintain performance.',
-                        inputSchema: {
-                            type: 'object',
-                            properties: {
-                                urls: {
-                                    type: 'array',
-                                    items: { type: 'string' },
-                                    description: 'Array of webpage URLs to extract content from. Each URL must be public and start with http:// or https://. Maximum 5 URLs per request.'
-                                },
-                                format: {
-                                    type: 'string',
-                                    description: 'Output format for the extracted content. Options: "markdown" (default), "html", or "text".'
-                                }
-                            },
-                            required: ['urls']
+                    {
+                        name: 'extract_multiple_webpages',
+                        description: 'Extract content from multiple webpages (max 5).',
+                        parameters: {
+                            urls: { type: 'array', required: true, description: 'Array of URLs to extract' },
+                            format: { type: 'string', description: 'Output format (markdown, html, text)' }
                         }
                     }
-                }
-            }
+                ]
+            });
         });
-        // Register tool list handler
-        this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-            tools: [
-                {
-                    name: 'google_search',
-                    description: 'Search Google and return relevant results from the web. This tool finds web pages, articles, and information on specific topics using Google\'s search engine. Results include titles, snippets, and URLs that can be analyzed further using extract_webpage_content.',
-                    inputSchema: {
-                        type: 'object',
-                        properties: {
-                            query: {
-                                type: 'string',
-                                description: 'Search query - be specific and use quotes for exact matches. For best results, use clear keywords and avoid very long queries.'
-                            },
-                            num_results: {
-                                type: 'number',
-                                description: 'Number of results to return (default: 5, max: 10). Increase for broader coverage, decrease for faster response.'
-                            },
-                            site: {
-                                type: 'string',
-                                description: 'Limit search results to a specific website domain (e.g., "wikipedia.org" or "nytimes.com").'
-                            },
-                            language: {
-                                type: 'string',
-                                description: 'Filter results by language using ISO 639-1 codes (e.g., "en" for English, "es" for Spanish, "fr" for French).'
-                            },
-                            dateRestrict: {
-                                type: 'string',
-                                description: 'Filter results by date using Google\'s date restriction format: "d[number]" for past days, "w[number]" for past weeks, "m[number]" for past months, or "y[number]" for past years. Example: "m6" for results from the past 6 months.'
-                            },
-                            exactTerms: {
-                                type: 'string',
-                                description: 'Search for results that contain this exact phrase. This is equivalent to putting the terms in quotes in the search query.'
-                            },
-                            resultType: {
-                                type: 'string',
-                                description: 'Specify the type of results to return. Options include "image" (or "images"), "news", and "video" (or "videos"). Default is general web results.'
-                            },
-                            page: {
-                                type: 'number',
-                                description: 'Page number for paginated results (starts at 1). Use in combination with resultsPerPage to navigate through large result sets.'
-                            },
-                            resultsPerPage: {
-                                type: 'number',
-                                description: 'Number of results to show per page (default: 5, max: 10). Controls how many results are returned for each page.'
-                            },
-                            sort: {
-                                type: 'string',
-                                description: 'Sorting method for search results. Options: "relevance" (default) or "date" (most recent first).'
-                            }
-                        },
-                        required: ['query']
-                    }
-                },
-                {
-                    name: 'extract_webpage_content',
-                    description: 'Extract and analyze content from a webpage, converting it to readable text. This tool fetches the main content while removing ads, navigation elements, and other clutter. Use it to get detailed information from specific pages found via google_search. Works with most common webpage formats including articles, blogs, and documentation.',
-                    inputSchema: {
-                        type: 'object',
-                        properties: {
-                            url: {
-                                type: 'string',
-                                description: 'Full URL of the webpage to extract content from (must start with http:// or https://). Ensure the URL is from a public webpage and not behind authentication.'
-                            },
-                            format: {
-                                type: 'string',
-                                description: 'Output format for the extracted content. Options: "markdown" (default), "html", or "text".'
-                            }
-                        },
-                        required: ['url']
-                    }
-                },
-                {
-                    name: 'extract_multiple_webpages',
-                    description: 'Extract and analyze content from multiple webpages in a single request. This tool is ideal for comparing information across different sources or gathering comprehensive information on a topic. Limited to 5 URLs per request to maintain performance.',
-                    inputSchema: {
-                        type: 'object',
-                        properties: {
-                            urls: {
-                                type: 'array',
-                                items: { type: 'string' },
-                                description: 'Array of webpage URLs to extract content from. Each URL must be public and start with http:// or https://. Maximum 5 URLs per request.'
-                            },
-                            format: {
-                                type: 'string',
-                                description: 'Output format for the extracted content. Options: "markdown" (default), "html", or "text".'
-                            }
-                        },
-                        required: ['urls']
-                    }
-                }
-            ]
-        }));
-        // Register tool call handler
-        this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            switch (request.params.name) {
-                case 'google_search':
-                    if (typeof request.params.arguments === 'object' && request.params.arguments !== null && 'query' in request.params.arguments) {
-                        return this.handleSearch({
-                            query: String(request.params.arguments.query),
-                            num_results: typeof request.params.arguments.num_results === 'number' ? request.params.arguments.num_results : undefined,
-                            filters: {
-                                site: request.params.arguments.site ? String(request.params.arguments.site) : undefined,
-                                language: request.params.arguments.language ? String(request.params.arguments.language) : undefined,
-                                dateRestrict: request.params.arguments.dateRestrict ? String(request.params.arguments.dateRestrict) : undefined,
-                                exactTerms: request.params.arguments.exactTerms ? String(request.params.arguments.exactTerms) : undefined,
-                                resultType: request.params.arguments.resultType ? String(request.params.arguments.resultType) : undefined,
-                                page: typeof request.params.arguments.page === 'number' ? request.params.arguments.page : undefined,
-                                resultsPerPage: typeof request.params.arguments.resultsPerPage === 'number' ? request.params.arguments.resultsPerPage : undefined,
-                                sort: request.params.arguments.sort ? String(request.params.arguments.sort) : undefined
-                            }
-                        });
-                    }
-                    throw new Error('Invalid arguments for google_search tool');
-                case 'extract_webpage_content':
-                    if (typeof request.params.arguments === 'object' && request.params.arguments !== null && 'url' in request.params.arguments) {
-                        return this.handleAnalyzeWebpage({
-                            url: String(request.params.arguments.url),
-                            format: request.params.arguments.format ? String(request.params.arguments.format) : 'markdown'
-                        });
-                    }
-                    throw new Error('Invalid arguments for extract_webpage_content tool');
-                case 'extract_multiple_webpages':
-                    if (typeof request.params.arguments === 'object' && request.params.arguments !== null && 'urls' in request.params.arguments && Array.isArray(request.params.arguments.urls)) {
-                        return this.handleBatchAnalyzeWebpages({
-                            urls: request.params.arguments.urls.map(String),
-                            format: request.params.arguments.format ? String(request.params.arguments.format) : 'markdown'
-                        });
-                    }
-                    throw new Error('Invalid arguments for extract_multiple_webpages tool');
-                default:
-                    throw new Error(`Unknown tool: ${request.params.name}`);
-            }
+        this.app.post('/search/stream', this.handleStreamingSearch.bind(this));
+        this.app.post('/extract/stream', this.handleStreamingExtract.bind(this));
+        this.app.post('/extract-multiple/stream', this.handleStreamingBatchExtract.bind(this));
+    }
+    async handleStreamingSearch(req, res) {
+        res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
         });
+        try {
+            const { query, num_results, ...filters } = req.body;
+            if (!query) {
+                res.write(JSON.stringify({ error: 'Query is required' }) + '\n');
+                res.end();
+                return;
+            }
+            res.write(JSON.stringify({ status: 'starting', message: 'Initiating search...' }) + '\n');
+            const result = await this.handleSearch({ query, num_results, filters });
+            res.write(JSON.stringify({ status: 'complete', data: result }) + '\n');
+            res.end();
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            res.write(JSON.stringify({ status: 'error', error: message }) + '\n');
+            res.end();
+        }
+    }
+    async handleStreamingExtract(req, res) {
+        res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+        });
+        try {
+            const { url, format } = req.body;
+            if (!url) {
+                res.write(JSON.stringify({ error: 'URL is required' }) + '\n');
+                res.end();
+                return;
+            }
+            res.write(JSON.stringify({ status: 'starting', message: 'Extracting content...' }) + '\n');
+            const result = await this.handleAnalyzeWebpage({ url, format });
+            res.write(JSON.stringify({ status: 'complete', data: result }) + '\n');
+            res.end();
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            res.write(JSON.stringify({ status: 'error', error: message }) + '\n');
+            res.end();
+        }
+    }
+    async handleStreamingBatchExtract(req, res) {
+        res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+        });
+        try {
+            const { urls, format } = req.body;
+            if (!urls || !Array.isArray(urls)) {
+                res.write(JSON.stringify({ error: 'URLs array is required' }) + '\n');
+                res.end();
+                return;
+            }
+            res.write(JSON.stringify({ status: 'starting', message: `Extracting content from ${urls.length} URLs...` }) + '\n');
+            const result = await this.handleBatchAnalyzeWebpages({ urls, format });
+            res.write(JSON.stringify({ status: 'complete', data: result }) + '\n');
+            res.end();
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            res.write(JSON.stringify({ status: 'error', error: message }) + '\n');
+            res.end();
+        }
     }
     async handleSearch(args) {
         try {
@@ -393,23 +298,33 @@ class GoogleSearchServer {
             };
         }
     }
-    async start() {
+    async start(port = 3000) {
         try {
-            const transport = new StdioServerTransport();
-            await this.server.connect(transport);
-            console.error('Google Search MCP server running');
-            // Keep the process running
+            this.app.listen(port, () => {
+                console.log(`Google Search HTTP streaming server running on port ${port}`);
+                console.log(`Health check: http://localhost:${port}/health`);
+                console.log(`Available tools: http://localhost:${port}/tools`);
+                console.log(`Streaming endpoints:`);
+                console.log(`  POST http://localhost:${port}/search/stream`);
+                console.log(`  POST http://localhost:${port}/extract/stream`);
+                console.log(`  POST http://localhost:${port}/extract-multiple/stream`);
+            });
+            // Graceful shutdown
             process.on('SIGINT', () => {
-                this.server.close().catch(console.error);
+                console.log('\nReceived SIGINT, shutting down gracefully...');
+                process.exit(0);
+            });
+            process.on('SIGTERM', () => {
+                console.log('\nReceived SIGTERM, shutting down gracefully...');
                 process.exit(0);
             });
         }
         catch (error) {
             if (error instanceof Error) {
-                console.error('Failed to start MCP server:', error.message);
+                console.error('Failed to start HTTP server:', error.message);
             }
             else {
-                console.error('Failed to start MCP server: Unknown error');
+                console.error('Failed to start HTTP server: Unknown error');
             }
             process.exit(1);
         }
@@ -417,4 +332,5 @@ class GoogleSearchServer {
 }
 // Start the server
 const server = new GoogleSearchServer();
-server.start().catch(console.error);
+const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+server.start(port).catch(console.error);
