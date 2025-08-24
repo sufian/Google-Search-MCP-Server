@@ -4,7 +4,6 @@ import { ContentExtractor } from './services/content-extractor.service.js';
 import { OutputFormat } from './types.js';
 
 class GoogleSearchServer {
-  private server: Server;
   private app: express.Application;
   private searchService: GoogleSearchService;
   private contentExtractor: ContentExtractor;
