@@ -545,46 +545,84 @@ class GoogleSearchServer {
   }
 
   async start(port: number = 3000) {
-    try {
-      this.app.listen(port, () => {
-        console.log(`🚀 Google Search MCP Server running on port ${port}`);
-        console.log(`\n📡 MCP Protocol Endpoint:`);
-        console.log(`  Main endpoint: http://localhost:${port}/mcp`);
-        console.log(`  GET  /mcp - Open SSE stream`);
-        console.log(`  POST /mcp - Send JSON-RPC requests`);
-        console.log(`\n🔧 Utilities:`);
-        console.log(`  Health check: http://localhost:${port}/health`);
-        console.log(`\n📋 Required Headers:`);
-        console.log(`  MCP-Protocol-Version: 2024-11-05`);
-        console.log(`  Accept: application/json or text/event-stream`);
-        console.log(`  Content-Type: application/json`);
-        console.log(`\n🛠️  Available Methods:`);
-        console.log(`  initialize, tools/list, tools/call`);
-        console.log(`\n🌐 For n8n/HTTP clients: http://localhost:${port}/mcp`);
-      });
-      
-      // Graceful shutdown
-      process.on('SIGINT', () => {
-        console.log('\nReceived SIGINT, shutting down gracefully...');
-        process.exit(0);
-      });
+    return new Promise<void>((resolve, reject) => {
+      try {
+        const server = this.app.listen(port, '0.0.0.0', () => {
+          console.log(`🚀 Google Search MCP Server running on port ${port}`);
+          console.log(`\n📡 MCP Protocol Endpoint:`);
+          console.log(`  Main endpoint: http://0.0.0.0:${port}/mcp`);
+          console.log(`  GET  /mcp - Open SSE stream`);
+          console.log(`  POST /mcp - Send JSON-RPC requests`);
+          console.log(`\n🔧 Utilities:`);
+          console.log(`  Health check: http://0.0.0.0:${port}/health`);
+          console.log(`\n📋 Required Headers:`);
+          console.log(`  MCP-Protocol-Version: 2024-11-05 (optional)`);
+          console.log(`  Accept: application/json or text/event-stream`);
+          console.log(`  Content-Type: application/json`);
+          console.log(`\n🛠️  Available Methods:`);
+          console.log(`  initialize, tools/list, tools/call`);
+          console.log(`\n🌐 For Docker/external access: http://0.0.0.0:${port}/mcp`);
+          console.log(`\n✅ Server ready and listening...`);
+          resolve();
+        });
 
-      process.on('SIGTERM', () => {
-        console.log('\nReceived SIGTERM, shutting down gracefully...');
-        process.exit(0);
-      });
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        console.error('Failed to start HTTP server:', error.message);
-      } else {
-        console.error('Failed to start HTTP server: Unknown error');
+        server.on('error', (error) => {
+          console.error('Server error:', error);
+          reject(error);
+        });
+        
+        // Graceful shutdown
+        process.on('SIGINT', () => {
+          console.log('\nReceived SIGINT, shutting down gracefully...');
+          server.close(() => {
+            console.log('Server closed');
+            process.exit(0);
+          });
+        });
+
+        process.on('SIGTERM', () => {
+          console.log('\nReceived SIGTERM, shutting down gracefully...');
+          server.close(() => {
+            console.log('Server closed');
+            process.exit(0);
+          });
+        });
+
+        // Handle uncaught exceptions
+        process.on('uncaughtException', (error) => {
+          console.error('Uncaught exception:', error);
+          process.exit(1);
+        });
+
+        process.on('unhandledRejection', (reason, promise) => {
+          console.error('Unhandled rejection at:', promise, 'reason:', reason);
+          process.exit(1);
+        });
+
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          console.error('Failed to start HTTP server:', error.message);
+        } else {
+          console.error('Failed to start HTTP server: Unknown error');
+        }
+        reject(error);
       }
-      process.exit(1);
-    }
+    });
   }
 }
 
 // Start the server
-const server = new GoogleSearchServer();
-const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-server.start(port).catch(console.error);
+async function startServer() {
+  const server = new GoogleSearchServer();
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+  
+  try {
+    await server.start(port);
+    console.log('🎯 MCP Server successfully initialized');
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
