@@ -365,7 +365,7 @@ class GoogleSearchServer {
     }
   }
 
-  async start(port: number = 5656) {
+  async start(port: number = 3000) {
     try {
       this.app.listen(port, () => {
         console.log(`Google Search HTTP streaming server running on port ${port}`);
