@@ -1,6 +1,8 @@
 import express from 'express';
+import { config } from 'dotenv';
 import { GoogleSearchService } from './services/google-search.service.js';
 import { ContentExtractor } from './services/content-extractor.service.js';
+config();
 class GoogleSearchServer {
     constructor() {
         this.searchService = new GoogleSearchService();

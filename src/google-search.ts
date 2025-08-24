@@ -1,7 +1,10 @@
 import express from 'express';
+import { config } from 'dotenv';
 import { GoogleSearchService } from './services/google-search.service.js';
 import { ContentExtractor } from './services/content-extractor.service.js';
 import { OutputFormat } from './types.js';
+
+config();
 
 class GoogleSearchServer {
   private app: express.Application;
