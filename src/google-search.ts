@@ -52,9 +52,52 @@ class GoogleSearchServer {
     // Main MCP endpoint - supports both GET and POST
     this.app.all('/mcp', this.handleMCPRequest.bind(this));
     
+    // Simple HTTP endpoints for n8n compatibility
+    this.app.post('/search', async (req, res) => {
+      try {
+        const result = await this.handleSearch(req.body);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    });
+
+    this.app.post('/extract', async (req, res) => {
+      try {
+        const result = await this.handleAnalyzeWebpage(req.body);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    });
+
+    this.app.post('/extract-multiple', async (req, res) => {
+      try {
+        const result = await this.handleBatchAnalyzeWebpages(req.body);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    });
+
     // Health check endpoint
     this.app.get('/health', (req, res) => {
       res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    });
+
+    // Server info endpoint
+    this.app.get('/', (req, res) => {
+      res.json({
+        name: 'Google Search MCP Server',
+        version: '1.0.0',
+        endpoints: {
+          mcp: '/mcp (JSON-RPC)',
+          search: '/search (simple HTTP)',
+          extract: '/extract (simple HTTP)',
+          extractMultiple: '/extract-multiple (simple HTTP)',
+          health: '/health'
+        }
+      });
     });
 
     // OPTIONS for CORS preflight
@@ -84,14 +127,22 @@ class GoogleSearchServer {
 
   private handleGetRequest(req: express.Request, res: express.Response) {
     const acceptHeader = req.get('Accept');
+    
+    // For n8n compatibility, allow GET requests to return server info
     if (!acceptHeader?.includes('text/event-stream')) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32600,
-          message: 'GET requests must include Accept: text/event-stream'
+      return res.json({
+        server: {
+          name: 'Google Search MCP Server',
+          version: '1.0.0',
+          description: 'MCP server for Google Search and webpage content extraction',
+          protocol: 'MCP over HTTP'
         },
-        id: null
+        endpoints: {
+          main: '/mcp',
+          health: '/health'
+        },
+        methods: ['initialize', 'tools/list', 'tools/call'],
+        usage: 'Send POST requests to /mcp with JSON-RPC format'
       });
     }
 
@@ -116,18 +167,10 @@ class GoogleSearchServer {
   private async handlePostRequest(req: express.Request, res: express.Response) {
     const acceptHeader = req.get('Accept');
     const wantsStream = acceptHeader?.includes('text/event-stream');
-    const wantsJSON = acceptHeader?.includes('application/json');
+    const wantsJSON = acceptHeader?.includes('application/json') || !acceptHeader;
 
-    if (!wantsStream && !wantsJSON) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32600,
-          message: 'Accept header must include application/json or text/event-stream'
-        },
-        id: null
-      });
-    }
+    // Default to JSON for n8n compatibility
+    const preferJSON = wantsJSON || !wantsStream;
 
     try {
       const jsonRpcRequest = req.body;
@@ -146,11 +189,11 @@ class GoogleSearchServer {
 
       // Handle different JSON-RPC methods
       if (jsonRpcRequest.method === 'tools/list') {
-        return this.handleToolsList(jsonRpcRequest, res, !!wantsStream);
+        return this.handleToolsList(jsonRpcRequest, res, !preferJSON);
       } else if (jsonRpcRequest.method === 'tools/call') {
-        return this.handleToolsCall(jsonRpcRequest, res, !!wantsStream);
+        return this.handleToolsCall(jsonRpcRequest, res, !preferJSON);
       } else if (jsonRpcRequest.method === 'initialize') {
-        return this.handleInitialize(jsonRpcRequest, res, !!wantsStream);
+        return this.handleInitialize(jsonRpcRequest, res, !preferJSON);
       } else {
         return res.status(400).json({
           jsonrpc: '2.0',
@@ -602,36 +645,35 @@ class GoogleSearchServer {
 // Start the server
 async function startServer() {
   console.log('🚀 Starting Google Search MCP Server...');
-  console.log('📋 Environment check:');
-  console.log(`  NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
-  console.log(`  PORT: ${process.env.PORT || 'not set (using 3000)'}`);
-  console.log(`  GOOGLE_API_KEY: ${process.env.GOOGLE_API_KEY ? 'set' : 'NOT SET'}`);
-  console.log(`  GOOGLE_SEARCH_ENGINE_ID: ${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'set' : 'NOT SET'}`);
-  
-  if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_SEARCH_ENGINE_ID) {
-    console.error('❌ Missing required environment variables:');
-    console.error('   GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID are required');
-    console.error('   Please check your .env file or Docker environment variables');
-    process.exit(1);
-  }
-  
-  const server = new GoogleSearchServer();
-  const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
   
   try {
+    console.log('📋 Environment check:');
+    console.log(`  NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+    console.log(`  PORT: ${process.env.PORT || 'not set (using 3000)'}`);
+    console.log(`  GOOGLE_API_KEY: ${process.env.GOOGLE_API_KEY ? 'set' : 'NOT SET'}`);
+    console.log(`  GOOGLE_SEARCH_ENGINE_ID: ${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'set' : 'NOT SET'}`);
+    
+    if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_SEARCH_ENGINE_ID) {
+      throw new Error('Missing required environment variables: GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID');
+    }
+    
+    console.log('🏗️  Creating server instance...');
+    const server = new GoogleSearchServer();
+    
+    const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     console.log(`🌐 Attempting to bind to 0.0.0.0:${port}...`);
+    
     await server.start(port);
     console.log('🎯 MCP Server successfully initialized and running');
-    
-    // Keep the process alive
-    process.stdin.resume();
+    console.log('♾️  Process will stay alive...');
     
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     if (error instanceof Error) {
-      console.error('Error stack:', error.stack);
+      console.error('📋 Error details:', error.message);
+      console.error('📋 Error stack:', error.stack);
     }
-    process.exit(1);
+    throw error;
   }
 }
 
@@ -646,5 +688,11 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-console.log('Google Search MCP server running');
-startServer();
+console.log('🏁 Google Search MCP Server v1.0.0');
+console.log('📅 Build timestamp:', new Date().toISOString());
+console.log('🐳 Container starting...');
+
+startServer().catch((error) => {
+  console.error('💥 Startup failed:', error);
+  process.exit(1);
+});
