@@ -21,150 +21,326 @@ class GoogleSearchServer {
 
   private setupMiddleware() {
     this.app.use(express.json());
+    
+    // Security: Validate Origin header to prevent DNS rebinding attacks
+    this.app.use((req, res, next) => {
+      const origin = req.get('Origin');
+      if (origin && !this.isAllowedOrigin(origin)) {
+        return res.status(403).json({ error: 'Forbidden origin' });
+      }
+      next();
+    });
+
+    // CORS headers
     this.app.use((req, res, next) => {
       res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       next();
     });
   }
 
+  private isAllowedOrigin(origin: string): boolean {
+    // Allow localhost and common development origins
+    const allowed = [
+      'http://localhost',
+      'https://localhost',
+      'http://127.0.0.1',
+      'https://127.0.0.1'
+    ];
+    return allowed.some(allowedOrigin => origin.startsWith(allowedOrigin));
+  }
+
   private setupRoutes() {
+    // Main MCP endpoint - supports both GET and POST
+    this.app.all('/mcp', this.handleMCPRequest.bind(this));
+    
+    // Health check endpoint
     this.app.get('/health', (req, res) => {
       res.json({ status: 'healthy', timestamp: new Date().toISOString() });
     });
 
-    this.app.get('/tools', (req, res) => {
-      res.json({
+    // OPTIONS for CORS preflight
+    this.app.options('*', (req, res) => {
+      res.status(200).end();
+    });
+  }
+
+  private async handleMCPRequest(req: express.Request, res: express.Response) {
+    // MCP Protocol Version is optional for broader compatibility
+
+    if (req.method === 'GET') {
+      return this.handleGetRequest(req, res);
+    } else if (req.method === 'POST') {
+      return this.handlePostRequest(req, res);
+    } else {
+      return res.status(405).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32601,
+          message: 'Method not allowed'
+        },
+        id: null
+      });
+    }
+  }
+
+  private handleGetRequest(req: express.Request, res: express.Response) {
+    const acceptHeader = req.get('Accept');
+    if (!acceptHeader?.includes('text/event-stream')) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'GET requests must include Accept: text/event-stream'
+        },
+        id: null
+      });
+    }
+
+    // Set up SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+
+    // Keep connection alive
+    const keepAlive = setInterval(() => {
+      res.write('data: \n\n');
+    }, 30000);
+
+    req.on('close', () => {
+      clearInterval(keepAlive);
+    });
+  }
+
+  private async handlePostRequest(req: express.Request, res: express.Response) {
+    const acceptHeader = req.get('Accept');
+    const wantsStream = acceptHeader?.includes('text/event-stream');
+    const wantsJSON = acceptHeader?.includes('application/json');
+
+    if (!wantsStream && !wantsJSON) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Accept header must include application/json or text/event-stream'
+        },
+        id: null
+      });
+    }
+
+    try {
+      const jsonRpcRequest = req.body;
+      
+      // Validate JSON-RPC format
+      if (!jsonRpcRequest.jsonrpc || jsonRpcRequest.jsonrpc !== '2.0') {
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32600,
+            message: 'Invalid JSON-RPC format'
+          },
+          id: jsonRpcRequest.id || null
+        });
+      }
+
+      // Handle different JSON-RPC methods
+      if (jsonRpcRequest.method === 'tools/list') {
+        return this.handleToolsList(jsonRpcRequest, res, !!wantsStream);
+      } else if (jsonRpcRequest.method === 'tools/call') {
+        return this.handleToolsCall(jsonRpcRequest, res, !!wantsStream);
+      } else if (jsonRpcRequest.method === 'initialize') {
+        return this.handleInitialize(jsonRpcRequest, res, !!wantsStream);
+      } else {
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32601,
+            message: `Method not found: ${jsonRpcRequest.method}`
+          },
+          id: jsonRpcRequest.id || null
+        });
+      }
+    } catch (error) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32700,
+          message: 'Parse error'
+        },
+        id: null
+      });
+    }
+  }
+
+  private async handleInitialize(jsonRpcRequest: any, res: express.Response, wantsStream: boolean) {
+    const response = {
+      jsonrpc: '2.0',
+      id: jsonRpcRequest.id,
+      result: {
+        protocolVersion: '2024-11-05',
+        capabilities: {
+          tools: {},
+        },
+        serverInfo: {
+          name: 'Google Search MCP Server',
+          version: '1.0.0'
+        }
+      }
+    };
+
+    if (wantsStream) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+      res.write(`data: ${JSON.stringify(response)}\n\n`);
+      res.end();
+    } else {
+      res.json(response);
+    }
+  }
+
+  private async handleToolsList(jsonRpcRequest: any, res: express.Response, wantsStream: boolean) {
+    const response = {
+      jsonrpc: '2.0',
+      id: jsonRpcRequest.id,
+      result: {
         tools: [
           {
             name: 'google_search',
             description: 'Search Google and return relevant results from the web.',
-            parameters: {
-              query: { type: 'string', required: true, description: 'Search query' },
-              num_results: { type: 'number', description: 'Number of results (default: 5, max: 10)' },
-              site: { type: 'string', description: 'Limit to specific domain' },
-              language: { type: 'string', description: 'Language filter (ISO 639-1 codes)' },
-              dateRestrict: { type: 'string', description: 'Date restriction (d[n], w[n], m[n], y[n])' },
-              exactTerms: { type: 'string', description: 'Exact phrase search' },
-              resultType: { type: 'string', description: 'Result type (image, news, video)' },
-              page: { type: 'number', description: 'Page number for pagination' },
-              resultsPerPage: { type: 'number', description: 'Results per page' },
-              sort: { type: 'string', description: 'Sort method (relevance, date)' }
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Search query' },
+                num_results: { type: 'number', description: 'Number of results (default: 5, max: 10)' },
+                site: { type: 'string', description: 'Limit to specific domain' },
+                language: { type: 'string', description: 'Language filter (ISO 639-1 codes)' },
+                dateRestrict: { type: 'string', description: 'Date restriction (d[n], w[n], m[n], y[n])' },
+                exactTerms: { type: 'string', description: 'Exact phrase search' },
+                resultType: { type: 'string', description: 'Result type (image, news, video)' },
+                page: { type: 'number', description: 'Page number for pagination' },
+                resultsPerPage: { type: 'number', description: 'Results per page' },
+                sort: { type: 'string', description: 'Sort method (relevance, date)' }
+              },
+              required: ['query']
             }
           },
           {
             name: 'extract_webpage_content',
             description: 'Extract and analyze content from a webpage.',
-            parameters: {
-              url: { type: 'string', required: true, description: 'URL to extract content from' },
-              format: { type: 'string', description: 'Output format (markdown, html, text)' }
+            inputSchema: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', description: 'URL to extract content from' },
+                format: { type: 'string', enum: ['markdown', 'html', 'text'], description: 'Output format' }
+              },
+              required: ['url']
             }
           },
           {
             name: 'extract_multiple_webpages',
             description: 'Extract content from multiple webpages (max 5).',
-            parameters: {
-              urls: { type: 'array', required: true, description: 'Array of URLs to extract' },
-              format: { type: 'string', description: 'Output format (markdown, html, text)' }
+            inputSchema: {
+              type: 'object',
+              properties: {
+                urls: { type: 'array', items: { type: 'string' }, description: 'Array of URLs to extract' },
+                format: { type: 'string', enum: ['markdown', 'html', 'text'], description: 'Output format' }
+              },
+              required: ['urls']
             }
           }
         ]
+      }
+    };
+
+    if (wantsStream) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
       });
-    });
-
-    this.app.post('/search/stream', this.handleStreamingSearch.bind(this));
-    this.app.post('/extract/stream', this.handleStreamingExtract.bind(this));
-    this.app.post('/extract-multiple/stream', this.handleStreamingBatchExtract.bind(this));
-  }
-
-  private async handleStreamingSearch(req: express.Request, res: express.Response) {
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Transfer-Encoding': 'chunked',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    try {
-      const { query, num_results, ...filters } = req.body;
-      
-      if (!query) {
-        res.write(JSON.stringify({ error: 'Query is required' }) + '\n');
-        res.end();
-        return;
-      }
-
-      res.write(JSON.stringify({ status: 'starting', message: 'Initiating search...' }) + '\n');
-
-      const result = await this.handleSearch({ query, num_results, filters });
-      
-      res.write(JSON.stringify({ status: 'complete', data: result }) + '\n');
+      res.write(`data: ${JSON.stringify(response)}\n\n`);
       res.end();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.write(JSON.stringify({ status: 'error', error: message }) + '\n');
-      res.end();
+    } else {
+      res.json(response);
     }
   }
 
-  private async handleStreamingExtract(req: express.Request, res: express.Response) {
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Transfer-Encoding': 'chunked',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
+  private async handleToolsCall(jsonRpcRequest: any, res: express.Response, wantsStream: boolean) {
+    const { name, arguments: args } = jsonRpcRequest.params;
+    
     try {
-      const { url, format } = req.body;
-      
-      if (!url) {
-        res.write(JSON.stringify({ error: 'URL is required' }) + '\n');
-        res.end();
-        return;
+      let result;
+      switch (name) {
+        case 'google_search':
+          result = await this.handleSearch(args);
+          break;
+        case 'extract_webpage_content':
+          result = await this.handleAnalyzeWebpage(args);
+          break;
+        case 'extract_multiple_webpages':
+          result = await this.handleBatchAnalyzeWebpages(args);
+          break;
+        default:
+          const errorResponse = {
+            jsonrpc: '2.0',
+            id: jsonRpcRequest.id,
+            error: {
+              code: -32601,
+              message: `Unknown tool: ${name}`
+            }
+          };
+          return res.status(400).json(errorResponse);
       }
 
-      res.write(JSON.stringify({ status: 'starting', message: 'Extracting content...' }) + '\n');
+      const response = {
+        jsonrpc: '2.0',
+        id: jsonRpcRequest.id,
+        result
+      };
 
-      const result = await this.handleAnalyzeWebpage({ url, format });
-      
-      res.write(JSON.stringify({ status: 'complete', data: result }) + '\n');
-      res.end();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.write(JSON.stringify({ status: 'error', error: message }) + '\n');
-      res.end();
-    }
-  }
-
-  private async handleStreamingBatchExtract(req: express.Request, res: express.Response) {
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Transfer-Encoding': 'chunked',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    try {
-      const { urls, format } = req.body;
-      
-      if (!urls || !Array.isArray(urls)) {
-        res.write(JSON.stringify({ error: 'URLs array is required' }) + '\n');
+      if (wantsStream) {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        });
+        
+        // Send progress updates if streaming
+        res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/progress', params: { token: jsonRpcRequest.id, progress: 0, total: 1 } })}\n\n`);
+        res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/progress', params: { token: jsonRpcRequest.id, progress: 1, total: 1 } })}\n\n`);
+        res.write(`data: ${JSON.stringify(response)}\n\n`);
         res.end();
-        return;
+      } else {
+        res.json(response);
       }
-
-      res.write(JSON.stringify({ status: 'starting', message: `Extracting content from ${urls.length} URLs...` }) + '\n');
-
-      const result = await this.handleBatchAnalyzeWebpages({ urls, format });
-      
-      res.write(JSON.stringify({ status: 'complete', data: result }) + '\n');
-      res.end();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.write(JSON.stringify({ status: 'error', error: message }) + '\n');
-      res.end();
+      const errorResponse = {
+        jsonrpc: '2.0',
+        id: jsonRpcRequest.id,
+        error: {
+          code: -32603,
+          message: error instanceof Error ? error.message : 'Internal error'
+        }
+      };
+      
+      if (wantsStream) {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        });
+        res.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
+        res.end();
+      } else {
+        res.status(500).json(errorResponse);
+      }
     }
   }
 
@@ -371,13 +547,20 @@ class GoogleSearchServer {
   async start(port: number = 3000) {
     try {
       this.app.listen(port, () => {
-        console.log(`Google Search HTTP streaming server running on port ${port}`);
-        console.log(`Health check: http://localhost:${port}/health`);
-        console.log(`Available tools: http://localhost:${port}/tools`);
-        console.log(`Streaming endpoints:`);
-        console.log(`  POST http://localhost:${port}/search/stream`);
-        console.log(`  POST http://localhost:${port}/extract/stream`);
-        console.log(`  POST http://localhost:${port}/extract-multiple/stream`);
+        console.log(`🚀 Google Search MCP Server running on port ${port}`);
+        console.log(`\n📡 MCP Protocol Endpoint:`);
+        console.log(`  Main endpoint: http://localhost:${port}/mcp`);
+        console.log(`  GET  /mcp - Open SSE stream`);
+        console.log(`  POST /mcp - Send JSON-RPC requests`);
+        console.log(`\n🔧 Utilities:`);
+        console.log(`  Health check: http://localhost:${port}/health`);
+        console.log(`\n📋 Required Headers:`);
+        console.log(`  MCP-Protocol-Version: 2024-11-05`);
+        console.log(`  Accept: application/json or text/event-stream`);
+        console.log(`  Content-Type: application/json`);
+        console.log(`\n🛠️  Available Methods:`);
+        console.log(`  initialize, tools/list, tools/call`);
+        console.log(`\n🌐 For n8n/HTTP clients: http://localhost:${port}/mcp`);
       });
       
       // Graceful shutdown
