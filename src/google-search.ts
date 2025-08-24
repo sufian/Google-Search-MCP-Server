@@ -1,10 +1,7 @@
 import express from 'express';
-import { config } from 'dotenv';
 import { GoogleSearchService } from './services/google-search.service.js';
 import { ContentExtractor } from './services/content-extractor.service.js';
 import { OutputFormat } from './types.js';
-
-config();
 
 class GoogleSearchServer {
   private app: express.Application;
@@ -588,16 +585,7 @@ class GoogleSearchServer {
           });
         });
 
-        // Handle uncaught exceptions
-        process.on('uncaughtException', (error) => {
-          console.error('Uncaught exception:', error);
-          process.exit(1);
-        });
-
-        process.on('unhandledRejection', (reason, promise) => {
-          console.error('Unhandled rejection at:', promise, 'reason:', reason);
-          process.exit(1);
-        });
+        // Server is now ready and listening
 
       } catch (error: unknown) {
         if (error instanceof Error) {
@@ -613,16 +601,50 @@ class GoogleSearchServer {
 
 // Start the server
 async function startServer() {
+  console.log('🚀 Starting Google Search MCP Server...');
+  console.log('📋 Environment check:');
+  console.log(`  NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+  console.log(`  PORT: ${process.env.PORT || 'not set (using 3000)'}`);
+  console.log(`  GOOGLE_API_KEY: ${process.env.GOOGLE_API_KEY ? 'set' : 'NOT SET'}`);
+  console.log(`  GOOGLE_SEARCH_ENGINE_ID: ${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'set' : 'NOT SET'}`);
+  
+  if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_SEARCH_ENGINE_ID) {
+    console.error('❌ Missing required environment variables:');
+    console.error('   GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID are required');
+    console.error('   Please check your .env file or Docker environment variables');
+    process.exit(1);
+  }
+  
   const server = new GoogleSearchServer();
   const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
   
   try {
+    console.log(`🌐 Attempting to bind to 0.0.0.0:${port}...`);
     await server.start(port);
-    console.log('🎯 MCP Server successfully initialized');
+    console.log('🎯 MCP Server successfully initialized and running');
+    
+    // Keep the process alive
+    process.stdin.resume();
+    
   } catch (error) {
     console.error('❌ Failed to start server:', error);
+    if (error instanceof Error) {
+      console.error('Error stack:', error.stack);
+    }
     process.exit(1);
   }
 }
 
+// Handle startup errors
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught exception during startup:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled rejection during startup:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+console.log('Google Search MCP server running');
 startServer();
