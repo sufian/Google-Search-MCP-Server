@@ -33,7 +33,8 @@ class GoogleSearchServer {
             'http://localhost',
             'https://localhost',
             'http://127.0.0.1',
-            'https://127.0.0.1'
+            'https://127.0.0.1',
+            'https://agent.growthstudio.cc'
         ];
         return allowed.some(allowedOrigin => origin.startsWith(allowedOrigin));
     }
@@ -92,6 +93,15 @@ class GoogleSearchServer {
         });
     }
     async handleMCPRequest(req, res) {
+        // Log incoming requests for debugging
+        console.log(`📥 MCP Request: ${req.method} ${req.path}`);
+        console.log(`📋 Headers:`, {
+            'content-type': req.get('Content-Type'),
+            'accept': req.get('Accept'),
+            'mcp-protocol-version': req.get('MCP-Protocol-Version'),
+            'origin': req.get('Origin'),
+            'user-agent': req.get('User-Agent')
+        });
         // MCP Protocol Version is optional for broader compatibility
         if (req.method === 'GET') {
             return this.handleGetRequest(req, res);
